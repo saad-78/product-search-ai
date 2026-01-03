@@ -1,0 +1,52 @@
+// Prisma schema for Product Search with pgvector
+
+generator client {
+  provider = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
+}
+
+datasource db {
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  extensions = [pgvector(map: "vector", schema: "public")]
+}
+
+model Product {
+  id          String   @id @default(cuid())
+  title       String
+  description String   @db.Text
+  price       Float
+  size        String?
+  category    String
+  tags        String[] @default([])
+  
+  // Vector embedding for semantic search (768 dimensions)
+  embedding   Unsupported("vector(768)")?
+  
+  images      Image[]
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  @@index([category])
+  @@index([price])
+  @@map("products")
+}
+
+model Image {
+  id          String   @id @default(cuid())
+  productId   String
+  product     Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  
+  url         String
+  storageKey  String
+  filename    String
+  size        Int
+  
+  embedding   Unsupported("vector(512)")?
+  
+  createdAt   DateTime @default(now())
+  
+  @@index([productId])
+  @@map("images")
+}
