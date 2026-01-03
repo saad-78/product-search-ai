@@ -6,6 +6,11 @@ import { SearchQuerySchema } from '@/lib/utils/validators';
 import { formatErrorResponse } from '@/lib/utils/errors';
 import type { ApiResponse, SearchResult, SearchFilters, Image } from '@/types';
 
+
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+
+
 interface RawSearchResult {
   id: string;
   title: string;

@@ -5,6 +5,10 @@ import { CreateProductSchema } from '@/lib/utils/validators';
 import { formatErrorResponse } from '@/lib/utils/errors';
 import type { ApiResponse, Product } from '@/types';
 
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+
+
 // Retry helper
 async function retryQuery<T>(fn: () => Promise<T>, maxRetries = 3): Promise<T> {
   for (let i = 0; i < maxRetries; i++) {
