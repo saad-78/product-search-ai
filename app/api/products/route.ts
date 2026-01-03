@@ -2,21 +2,18 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { generateTextEmbedding } from '@/lib/ai/embeddings';
 import { CreateProductSchema } from '@/lib/utils/validators';
-import { formatErrorResponse, isGeminiRateLimitError } from '@/lib/utils/errors';
+import { formatErrorResponse } from '@/lib/utils/errors';
 import type { ApiResponse, Product } from '@/types';
 
 // Retry helper
 async function retryQuery<T>(fn: () => Promise<T>, maxRetries = 3): Promise<T> {
   for (let i = 0; i < maxRetries; i++) {
     try {
-      if (i > 0) {
-        await prisma.$connect();
-      }
+      if (i > 0) await prisma.$connect();
       return await fn();
     } catch (error: any) {
       const isLastAttempt = i === maxRetries - 1;
       const isConnectionError = error?.code === 'P1017' || error?.message?.includes('closed');
-      
       if (isConnectionError && !isLastAttempt) {
         await new Promise(resolve => setTimeout(resolve, 1000));
         continue;
@@ -27,21 +24,11 @@ async function retryQuery<T>(fn: () => Promise<T>, maxRetries = 3): Promise<T> {
   throw new Error('Max retries exceeded');
 }
 
-/**
- * POST /api/products
- * Create a new product
- */
 export async function POST(req: NextRequest) {
   try {
-    console.log('📥 POST /api/products - Creating new product...');
-
     const body = await req.json();
-    console.log('📦 Request body:', body);
-
     const validatedData = CreateProductSchema.parse(body);
-    console.log('✅ Data validated');
 
-    // Generate embedding
     let embedding: number[] | null = null;
     try {
       const textForEmbedding = [
@@ -50,15 +37,11 @@ export async function POST(req: NextRequest) {
         ...validatedData.tags,
       ].join(' ');
       
-      console.log('🔢 Generating embedding...');
       embedding = await generateTextEmbedding(textForEmbedding);
-      console.log('✅ Embedding generated');
     } catch (error) {
-      console.warn('⚠️ Embedding generation failed, creating without embedding');
+      console.warn('⚠️ Embedding generation failed');
     }
 
-    // Save to database
-    console.log('💾 Saving to database...');
     const productId = await retryQuery(async () => {
       return await prisma.$queryRaw<Array<{ id: string }>>`
         INSERT INTO products (id, title, description, price, size, category, tags, embedding, "createdAt", "updatedAt")
@@ -78,21 +61,12 @@ export async function POST(req: NextRequest) {
       `;
     });
 
-    console.log('✅ Product created with ID:', productId[0].id);
-
-    // Fetch created product
     const product = await retryQuery(async () => {
       return await prisma.product.findUnique({
         where: { id: productId[0].id },
         include: { images: true },
       });
     });
-
-    if (!product) {
-      throw new Error('Failed to retrieve created product');
-    }
-
-    console.log('✅ Product creation successful');
 
     return NextResponse.json({
       success: true,
@@ -107,23 +81,12 @@ export async function POST(req: NextRequest) {
   }
 }
 
-/**
- * GET /api/products
- * List all products
- */
-/**
- * GET /api/products
- * List all products
- */
 export async function GET(req: NextRequest) {
   try {
-    console.log('📥 GET /api/products');
-
     const { searchParams } = new URL(req.url);
     const limit = Math.min(parseInt(searchParams.get('limit') || '10'), 50);
     const offset = parseInt(searchParams.get('offset') || '0');
 
-    // FIX: Add explicit type parameter <number> to total
     const products = await retryQuery(() => 
       prisma.product.findMany({
         take: limit,

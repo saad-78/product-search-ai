@@ -1,9 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
-import { generateTextEmbedding } from '@/lib/ai/embeddings';
-import { UpdateProductSchema } from '@/lib/utils/validators';
-import { formatErrorResponse, NotFoundError } from '@/lib/utils/errors';
-import { deleteFromCloudinary } from '@/lib/storage/cloudinary';
 import type { ApiResponse, Product } from '@/types';
 
 // Retry helper
@@ -25,18 +21,12 @@ async function retryQuery<T>(fn: () => Promise<T>, maxRetries = 3): Promise<T> {
   throw new Error('Max retries exceeded');
 }
 
-/**
- * GET /api/products/:id
- * Get single product by ID
- */
 export async function GET(
   req: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
+  context: { params: Promise<{ id: string }> }
 ) {
   try {
-    const { id } = await params;
-    
-    console.log('📥 GET /api/products/' + id);
+    const { id } = await context.params;
 
     const product = await retryQuery(async () => {
       return await prisma.product.findUnique({
@@ -46,11 +36,17 @@ export async function GET(
     });
 
     if (!product) {
-      console.log('❌ Product not found:', id);
-      throw new NotFoundError('Product');
+      return NextResponse.json(
+        {
+          success: false,
+          error: {
+            code: 'NOT_FOUND',
+            message: 'Product not found',
+          },
+        },
+        { status: 404 }
+      );
     }
-
-    console.log('✅ Product found:', product.title);
 
     const response: ApiResponse<Product> = {
       success: true,
@@ -63,122 +59,43 @@ export async function GET(
     return NextResponse.json(response);
   } catch (error) {
     console.error('❌ Get product error:', error);
-    const errorResponse = formatErrorResponse(error);
-    const statusCode = error instanceof NotFoundError ? 404 : 500;
-    return NextResponse.json(errorResponse, { status: statusCode });
+    return NextResponse.json(
+      {
+        success: false,
+        error: {
+          code: 'INTERNAL_ERROR',
+          message: 'Failed to fetch product',
+        },
+      },
+      { status: 500 }
+    );
   }
 }
 
-/**
- * PUT /api/products/:id
- * Update product
- */
-export async function PUT(
-  req: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
-) {
-  try {
-    const { id } = await params;
-    const body = await req.json();
-    const updates = UpdateProductSchema.parse(body);
-
-    const existingProduct = await retryQuery(async () => {
-      return await prisma.product.findUnique({ where: { id } });
-    });
-
-    if (!existingProduct) {
-      throw new NotFoundError('Product');
-    }
-
-    // Regenerate embedding if text fields changed
-    let embedding: number[] | undefined;
-    if (updates.title || updates.description || updates.tags) {
-      const textForEmbedding = [
-        updates.title || existingProduct.title,
-        updates.description || existingProduct.description,
-        ...(updates.tags || existingProduct.tags),
-      ].join(' ');
-
-      try {
-        embedding = await generateTextEmbedding(textForEmbedding);
-      } catch (error) {
-        console.warn('Failed to generate embedding on update');
-      }
-    }
-
-    if (embedding) {
-      await retryQuery(async () => {
-        return await prisma.$executeRaw`
-          UPDATE products 
-          SET 
-            title = COALESCE(${updates.title}, title),
-            description = COALESCE(${updates.description}, description),
-            price = COALESCE(${updates.price}, price),
-            size = COALESCE(${updates.size}, size),
-            category = COALESCE(${updates.category}, category),
-            tags = COALESCE(${updates.tags ? updates.tags : null}::text[], tags),
-            embedding = ${`[${embedding.join(',')}]`}::vector(768),
-            "updatedAt" = NOW()
-          WHERE id = ${id}
-        `;
-      });
-    } else {
-      await retryQuery(async () => {
-        return await prisma.product.update({
-          where: { id },
-          data: updates,
-        });
-      });
-    }
-
-    const updatedProduct = await retryQuery(async () => {
-      return await prisma.product.findUnique({
-        where: { id },
-        include: { images: true },
-      });
-    });
-
-    return NextResponse.json({
-      success: true,
-      data: updatedProduct as Product,
-      metadata: { timestamp: new Date().toISOString() },
-    });
-  } catch (error) {
-    const errorResponse = formatErrorResponse(error);
-    const statusCode = error instanceof NotFoundError ? 404 : 400;
-    return NextResponse.json(errorResponse, { status: statusCode });
-  }
-}
-
-/**
- * DELETE /api/products/:id
- * Delete product
- */
 export async function DELETE(
   req: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
+  context: { params: Promise<{ id: string }> }
 ) {
   try {
-    const { id } = await params;
+    const { id } = await context.params;
 
     const product = await retryQuery(async () => {
       return await prisma.product.findUnique({
         where: { id },
-        include: { images: true },
       });
     });
 
     if (!product) {
-      throw new NotFoundError('Product');
-    }
-
-    // Delete images from Cloudinary
-    for (const image of product.images) {
-      try {
-        await deleteFromCloudinary(image.storageKey);
-      } catch (error) {
-        console.error(`Failed to delete image ${image.storageKey}:`, error);
-      }
+      return NextResponse.json(
+        {
+          success: false,
+          error: {
+            code: 'NOT_FOUND',
+            message: 'Product not found',
+          },
+        },
+        { status: 404 }
+      );
     }
 
     await retryQuery(async () => {
@@ -187,11 +104,20 @@ export async function DELETE(
 
     return NextResponse.json({
       success: true,
+      data: null,
       metadata: { timestamp: new Date().toISOString() },
     });
   } catch (error) {
-    const errorResponse = formatErrorResponse(error);
-    const statusCode = error instanceof NotFoundError ? 404 : 500;
-    return NextResponse.json(errorResponse, { status: statusCode });
+    console.error('❌ Delete product error:', error);
+    return NextResponse.json(
+      {
+        success: false,
+        error: {
+          code: 'INTERNAL_ERROR',
+          message: 'Failed to delete product',
+        },
+      },
+      { status: 500 }
+    );
   }
 }
