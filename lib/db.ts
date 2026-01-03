@@ -1,6 +1,5 @@
 import { PrismaClient } from '@prisma/client';
 
-// Prevent multiple instances of Prisma Client in development
 const globalForPrisma = globalThis as unknown as {
   prisma: PrismaClient | undefined;
 };
@@ -8,19 +7,16 @@ const globalForPrisma = globalThis as unknown as {
 export const prisma =
   globalForPrisma.prisma ??
   new PrismaClient({
-    log: ['error', 'warn'],
-    datasources: {
-      db: {
-        url: process.env.DATABASE_URL,
-      },
-    },
+    log: process.env.NODE_ENV === 'development' ? ['error', 'warn'] : ['error'],
   });
 
 if (process.env.NODE_ENV !== 'production') {
   globalForPrisma.prisma = prisma;
 }
 
-// Handle disconnection gracefully
-process.on('beforeExit', async () => {
-  await prisma.$disconnect();
-});
+// Don't connect during build
+if (process.env.NEXT_PHASE !== 'phase-production-build') {
+  prisma.$connect().catch(() => {
+    console.warn('Database connection failed during initialization');
+  });
+}

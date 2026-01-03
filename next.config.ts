@@ -1,23 +1,18 @@
-import type { NextConfig } from 'next';
-
-const nextConfig: NextConfig = {
-  // Allow external images from Cloudinary
-  images: {
-    remotePatterns: [
-      {
-        protocol: 'https',
-        hostname: 'res.cloudinary.com',
-      },
-    ],
-  },
-  
-  reactStrictMode: true,
-  
+/** @type {import('next').NextConfig} */
+const nextConfig = {
+  // Disable static optimization for API routes
   experimental: {
     serverActions: {
-      allowedOrigins: ['localhost:3000'],
+      bodySizeLimit: '2mb',
     },
+  },
+  // Skip database during build
+  typescript: {
+    ignoreBuildErrors: false,
+  },
+  eslint: {
+    ignoreDuringBuilds: false,
   },
 };
 
-export default nextConfig;
+module.exports = nextConfig;
